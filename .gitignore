@@ -1,0 +1,23 @@
+# API Keys and Environment Secrets
+# IMPORTANT: Never commit your actual API keys to GitHub!
+.env
+
+# Local Database Files
+vector_db.json
+chroma_db/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Python Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# OS metadata files
+.DS_Store
+Thumbs.db

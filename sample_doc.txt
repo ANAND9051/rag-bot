@@ -1,0 +1,14 @@
+Retrieval-Augmented Generation (RAG) is a technique used to improve the accuracy and reliability of generative AI models by fetching facts from external data sources.
+Normally, Large Language Models (LLMs) are limited to the data they were trained on. RAG solves this by querying external files, databases, or websites during runtime, extracting the relevant context, and feeding it to the LLM to get a highly relevant and grounded answer.
+
+How RAG Works under the hood:
+1. Document Ingestion: Documents (like PDFs or text files) are split into smaller segments called 'chunks'. This chunking is necessary because models have limit size for contexts.
+2. Embedding Generation: Each chunk is processed by an embedding model. This model converts the text chunk into a high-dimensional vector of numbers (embeddings) that captures the semantic meaning of the text.
+3. Vector Storage: These vectors are stored in a Vector Database (like ChromaDB, Pinecone, or Qdrant).
+4. Semantic Search: When a user asks a question, the question is also converted into an embedding. The vector database performs a similarity search (like Cosine Similarity or L2 distance) to find the text chunks that are mathematically closest to the question.
+5. Generation: The system retrieves the top matched text chunks, formats them as context, inserts them into a prompt template, and sends them to the LLM to produce a response.
+
+Benefits of RAG:
+- Reduces hallucinations: The model relies on the provided facts instead of guessing.
+- Real-time updates: You can update the data in the vector database instantly without needing to retrain the LLM.
+- Access control: You can filter chunks based on user permissions before querying.
