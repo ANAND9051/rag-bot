@@ -116,6 +116,47 @@ class GeminiClient:
         except (KeyError, IndexError) as e:
             raise RuntimeError(f"Unexpected response format: {data}") from e
 
+    def generate_answer_stream(
+        self,
+        prompt: str,
+        model: str = "gemini-2.5-flash",
+        temperature: float = 0.2,
+    ):
+        """
+        Streams generated text from Google Gemini LLM using Server-Sent Events (SSE).
+        Yields text chunks as strings.
+        """
+        import json
+        url = f"{self.BASE_URL}/models/{model}:streamGenerateContent?key={self.api_key}&alt=sse"
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": temperature,
+            },
+        }
+
+        response = requests.post(url, json=payload, stream=True, timeout=60)
+        if response.status_code != 200:
+            raise RuntimeError(f"Streaming API error [{response.status_code}]: {response.text}")
+
+        for line in response.iter_lines():
+            if not line:
+                continue
+            line_str = line.decode("utf-8")
+            if line_str.startswith("data: "):
+                data_json = line_str[6:].strip()
+                try:
+                    data = json.loads(data_json)
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        parts = candidates[0].get("content", {}).get("parts", [])
+                        for part in parts:
+                            text_piece = part.get("text", "")
+                            if text_piece:
+                                yield text_piece
+                except json.JSONDecodeError:
+                    continue
+
     def extract_pdf_multimodal(self, pdf_bytes: bytes, instruction: str = None) -> str:
         """
         Uses Gemini 2.5 Flash's native multimodal capabilities to transcribe

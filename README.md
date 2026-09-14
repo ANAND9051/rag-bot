@@ -74,7 +74,7 @@ python ingest.py docs/java_course.pdf sample_doc.txt --clear
 python ingest.py docs/
 ```
 
-### Step 2: Start Interactive Q&A
+### Step 2: Start Interactive Q&A (CLI)
 ```bash
 python query.py
 ```
@@ -83,6 +83,16 @@ Try asking:
 * *"What are the flavors of Java according to the course?"*
 * *"What are the main benefits of RAG?"*
 * *"What is the weather in Tokyo?"* *(Tests the hallucination guardrail)*
+
+### Step 3: Start Streamlit Web UI (Interactive Browser App)
+```bash
+streamlit run app.py
+```
+* **Live Streaming Responses**: Real-time token streaming with Gemini 2.5 Flash.
+* **Conversational Context**: Multi-turn chat history with smart query reformulation.
+* **File Upload & Ingestion**: Upload `.pdf`, `.txt`, and `.md` files directly in the browser.
+* **Live Pinecone Cloud Dashboard**: View live vector counts, AWS region, and index status.
+* **Expandable Source Citations**: Inspect exact chunk matches and similarity scores.
 
 ---
 
