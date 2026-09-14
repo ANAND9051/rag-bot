@@ -1,68 +1,152 @@
 import os
-import json
-import math
+import time
+import uuid
+from typing import List, Dict, Tuple, Any, Optional
+from dotenv import load_dotenv
+from pinecone import Pinecone, ServerlessSpec
 
-class SimpleVectorDB:
-    def __init__(self, filepath="vector_db.json"):
+# Load environment variables
+load_dotenv()
+
+class PineconeVectorDB:
+    """
+    Official Cloud Vector Database backed by Pinecone (Serverless).
+    Provides persistent cloud vector storage, cosine similarity search,
+    and metadata filtering with global low-latency availability.
+    """
+
+    def __init__(
+        self,
+        index_name: str = "rag-bot",
+        dimension: int = 768,
+        metric: str = "cosine",
+        cloud: str = "aws",
+        region: str = "us-east-1",
+        api_key: Optional[str] = None,
+    ):
+        self.api_key = api_key or os.getenv("PINECONE_API_KEY")
+        if not self.api_key or self.api_key.startswith("YOUR_"):
+            raise ValueError(
+                "PINECONE_API_KEY is not set. Please set it in your .env file or pass it to PineconeVectorDB."
+            )
+
+        self.index_name = index_name
+        self.dimension = dimension
+        self.metric = metric
+
+        # Initialize official Pinecone client
+        self.pc = Pinecone(api_key=self.api_key)
+
+        # Ensure index exists
+        existing_indexes = [idx.name for idx in self.pc.list_indexes()]
+        if self.index_name not in existing_indexes:
+            print(f"📦 Creating serverless Pinecone index '{self.index_name}'...")
+            self.pc.create_index(
+                name=self.index_name,
+                dimension=self.dimension,
+                metric=self.metric,
+                spec=ServerlessSpec(cloud=cloud, region=region),
+            )
+            # Wait until index is ready
+            while not self.pc.describe_index(self.index_name).status["ready"]:
+                time.sleep(1)
+
+        self.index = self.pc.Index(self.index_name)
+
+    def add_documents(
+        self,
+        texts: List[str],
+        embeddings: List[List[float]],
+        metadatas: Optional[List[Dict[str, Any]]] = None,
+        batch_size: int = 50,
+    ) -> int:
         """
-        A basic, file-based vector database.
-        Stores chunks and embeddings in a JSON file and uses cosine similarity for search.
+        Upserts document chunks and embeddings with metadata to Pinecone.
         """
-        self.filepath = filepath
-        self.data = []
-        self.load()
+        if not texts or not embeddings:
+            return 0
 
-    def load(self):
-        """Loads data from the JSON file if it exists."""
-        if os.path.exists(self.filepath):
-            try:
-                with open(self.filepath, "r", encoding="utf-8") as f:
-                    self.data = json.load(f)
-            except Exception as e:
-                print(f"[WARNING] Could not load database: {e}. Starting fresh.")
-                self.data = []
+        if len(texts) != len(embeddings):
+            raise ValueError("Number of texts must match number of embeddings.")
 
-    def save(self):
-        """Saves current database state to the JSON file."""
-        try:
-            with open(self.filepath, "w", encoding="utf-8") as f:
-                json.dump(self.data, f, indent=4)
-        except Exception as e:
-            print(f"[ERROR] Failed to save database: {e}")
+        if metadatas is None:
+            metadatas = [{} for _ in texts]
 
-    def add(self, text, embedding, metadata=None):
-        """Adds a document chunk, its embedding, and metadata, then saves it."""
-        self.data.append({
-            "text": text,
-            "embedding": embedding,
-            "metadata": metadata or {}
-        })
-        self.save()
+        vectors_to_upsert = []
+        for idx, (text, emb, meta) in enumerate(zip(texts, embeddings, metadatas)):
+            # Create a clean, deterministic or unique ID
+            src_file = os.path.basename(meta.get("source", "doc"))
+            chunk_num = meta.get("chunk_index", idx)
+            vector_id = f"{src_file}_chunk_{chunk_num}_{uuid.uuid4().hex[:6]}"
 
-    def query(self, query_embedding, n_results=2):
+            # Store the chunk text directly in Pinecone metadata
+            payload_meta = dict(meta)
+            payload_meta["text"] = text
+
+            vectors_to_upsert.append({
+                "id": vector_id,
+                "values": emb,
+                "metadata": payload_meta,
+            })
+
+        # Batch upsert to Pinecone
+        for i in range(0, len(vectors_to_upsert), batch_size):
+            batch = vectors_to_upsert[i : i + batch_size]
+            self.index.upsert(vectors=batch)
+
+        return len(texts)
+
+    def search(
+        self,
+        query_embedding: List[float],
+        top_k: int = 3,
+        score_threshold: Optional[float] = None,
+    ) -> List[Tuple[float, Dict[str, Any]]]:
         """
-        Computes cosine similarity between the query embedding and all stored embeddings.
-        Returns the top `n_results` matching segments.
+        Queries Pinecone for the top-k most similar chunks.
+        Returns a list of tuples: (similarity_score, document_info).
         """
-        if not self.data:
-            return []
-            
+        query_res = self.index.query(
+            vector=query_embedding,
+            top_k=top_k,
+            include_metadata=True,
+        )
+
         results = []
-        for item in self.data:
-            similarity = self.cosine_similarity(query_embedding, item["embedding"])
-            results.append((similarity, item))
-            
-        # Sort results by similarity score descending (highest score first)
-        results.sort(key=lambda x: x[0], reverse=True)
-        return results[:n_results]
+        matches = getattr(query_res, "matches", []) or []
 
-    def cosine_similarity(self, v1, v2):
-        """Calculates the cosine similarity between two numeric vectors."""
-        dot_product = sum(a * b for a, b in zip(v1, v2))
-        magnitude_v1 = math.sqrt(sum(a * a for a in v1))
-        magnitude_v2 = math.sqrt(sum(a * a for a in v2))
-        
-        if magnitude_v1 == 0 or magnitude_v2 == 0:
-            return 0.0
-            
-        return dot_product / (magnitude_v1 * magnitude_v2)
+        for match in matches:
+            score = float(match.score)
+            if score_threshold is not None and score < score_threshold:
+                continue
+
+            metadata = match.metadata or {}
+            doc_text = metadata.get("text", "")
+
+            doc_info = {
+                "id": match.id,
+                "text": doc_text,
+                "metadata": metadata,
+            }
+            results.append((score, doc_info))
+
+        return results
+
+    def clear(self):
+        """Deletes all vectors from the Pinecone index."""
+        try:
+            self.index.delete(delete_all=True)
+            # Give Pinecone cloud a moment to propagate deletion
+            time.sleep(1)
+        except Exception as e:
+            # If index is already empty, delete(delete_all=True) might return 404 or empty
+            pass
+
+    @property
+    def total_vectors(self) -> int:
+        """Returns the number of vectors stored in the Pinecone index."""
+        try:
+            stats = self.index.describe_index_stats()
+            return stats.total_vector_count or 0
+        except Exception:
+            return 0

@@ -2,9 +2,11 @@
 # IMPORTANT: Never commit your actual API keys to GitHub!
 .env
 
-# Local Database Files
+# Local Database & Index Files
 vector_db.json
 chroma_db/
+faiss_index.bin
+docstore.json
 
 # Python Cache
 __pycache__/

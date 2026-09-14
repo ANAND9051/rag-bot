@@ -1,60 +1,100 @@
-# Document Q&A Bot (RAG from Scratch)
+# Document Q&A Bot (Production RAG with Pinecone & Google Gemini)
 
-This is a basic starter project designed to help you learn:
-1. **Document chunking**
-2. **Text Embeddings** (using Google Gemini API `models/gemini-embedding-001`)
-3. **Vector Database search** (using a custom, file-backed Vector Database built from scratch)
-4. **Retrieval-Augmented Generation (RAG)** (using Gemini LLM `gemini-2.5-flash`)
+An enterprise-grade Retrieval-Augmented Generation (RAG) system built with **Pinecone** (the official, dedicated cloud vector database) and **Google Gemini** (`gemini-2.5-flash` + `gemini-embedding-001`).
+
+---
+
+## 🏗️ Architecture Overview
+
+```
+                         [ User Documents (.txt / .pdf) ]
+                                        │
+                                        ▼
+                  [ Recursive Boundary-Aware Chunking ]
+                        (Paragraphs / Sentences / Words)
+                                        │
+                                        ▼
+                   [ Dense Vector Embeddings (Gemini) ]
+                        (task_type: RETRIEVAL_DOCUMENT)
+                                        │
+                                        ▼
+               [ Pinecone Cloud Serverless Index ('rag-bot') ]
+                   (Cosine Similarity | AWS us-east-1)
+                                        │
+                         [ Real-Time Q&A Terminal CLI ]
+```
+
+### Query Flow:
+1. **Multi-Document Ingestion**: Supports single files, multiple PDFs, and directories simultaneously (`python ingest.py doc1.pdf doc2.pdf`).
+2. **Semantic Query Embedding**: Converts user queries into 768-dimensional normalized vectors with `taskType="RETRIEVAL_QUERY"`.
+3. **Pinecone Vector Search**: Queries the hosted Pinecone cloud index with sub-millisecond similarity matching.
+4. **Context Construction & Citations**: Extracts matching text and metadata (file source, page numbers, chunk IDs).
+5. **Grounded Generation**: Prompts `gemini-2.5-flash` with strict hallucination-prevention guardrails to answer solely based on verified document context.
+
+---
+
+## ⚡ Production Features
+
+| Feature | Description |
+|---|---|
+| **Official Vector DB** | Hosted, serverless cloud index on **Pinecone** with real-time web dashboard |
+| **Multi-Doc Ingestion** | Ingest multiple PDFs/text files in a single run; searches across all of them |
+| **Multimodal Vision OCR** | Automatically transcribes scanned, image-only, or handwritten PDFs via Gemini Flash |
+| **Boundary-Aware Chunking** | Splits text on paragraphs, sentences, and words—never slicing words in half |
+| **Source Citations** | Explicitly cites source files (`[Source #1 \| File: java_course.pdf]`) |
+| **Hallucination Guardrail** | Fails gracefully when documents do not contain the answer |
 
 ---
 
 ## 🚀 Setup Instructions
 
-### 1. Open Terminal and Navigate to Project
-Make sure your terminal is inside the project directory:
+### 1. Install Dependencies
 ```bash
 cd C:/Users/anand/rag_bot
+python -m pip install -r requirements.txt
 ```
 
-### 2. Install Dependencies
-Install the required Python packages:
-```bash
-pip install -r requirements.txt
+### 2. Configure API Keys
+Add your keys to `.env` in the project root:
+```env
+GEMINI_API_KEY=your_gemini_api_key
+PINECONE_API_KEY=your_pinecone_api_key
 ```
-
-### 3. Add your API Key
-1. Open the `.env` file in this directory.
-2. Replace `YOUR_GEMINI_API_KEY_HERE` with your actual Gemini API key from [Google AI Studio](https://aistudio.google.com/).
 
 ---
 
-## 🏃 Running the Project
+## 🏃 Usage
 
-### Step 1: Ingest the Document
-Run the ingestion script to split the text in `sample_doc.txt`, convert it into embeddings, and store it in ChromaDB:
+### Step 1: Ingest Documents (Single or Multiple)
 ```bash
-python ingest.py
-```
-*(Optionally, you can pass another text/pdf file: `python ingest.py path/to/your/document.pdf`)*
+# Ingest single or multiple files into Pinecone
+python ingest.py docs/java_course.pdf sample_doc.txt --clear
 
-### Step 2: Query and Chat
-Run the query script to launch the Q&A terminal CLI:
+# Ingest all documents in a folder
+python ingest.py docs/
+```
+
+### Step 2: Start Interactive Q&A
 ```bash
 python query.py
 ```
-Ask questions like:
-- *"What is RAG?"*
-- *"What are the benefits of RAG?"*
-- *"What is the context window of Gemini 2.5 Flash?"* (this is present in the sample text but is a great test of retrieval)
-- *"What is the weather today?"* (should trigger the "not enough information" response because it's not in the context)
+
+Try asking:
+* *"What are the flavors of Java according to the course?"*
+* *"What are the main benefits of RAG?"*
+* *"What is the weather in Tokyo?"* *(Tests the hallucination guardrail)*
+
+---
+
+## 📊 Inspect Vectors in Pinecone Web Console
+You can view your live vectors, metadata payloads, and index metrics directly in the Pinecone dashboard at **[app.pinecone.io](https://app.pinecone.io)** under the index **`rag-bot`**.
 
 ---
 
 ## 📸 Demo Screenshots
-Here is what the command line interface looks like:
 
-### Ingestion Output:
-![Document Ingestion](assets/screenshot1.png)
+### Multi-Document Q&A with Pinecone Cloud & Inline Citations:
+![Pinecone Query Demo 1](assets/Screenshot%202026-09-14%20141618.png)
 
-### Query Output:
-![Document Querying](assets/screenshot2.png)
+### Real-Time Retrieval & Hallucination Guardrails:
+![Pinecone Query Demo 2](assets/Screenshot%202026-09-14%20141715.png)

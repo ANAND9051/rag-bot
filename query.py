@@ -1,111 +1,137 @@
 import os
 import sys
-import google.generativeai as genai
-from dotenv import load_dotenv
-from vector_db import SimpleVectorDB
+import time
+from gemini_client import GeminiClient
+from vector_db import PineconeVectorDB
 
-# Load variables from .env file
-load_dotenv()
+# Ensure UTF-8 output on Windows consoles
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
 
-# Verify that the Gemini API Key is set
-api_key = os.getenv("GEMINI_API_KEY")
-if not api_key or api_key == "YOUR_GEMINI_API_KEY_HERE":
-    print("[ERROR] Please set your GEMINI_API_KEY in the .env file.")
-    sys.exit(1)
-
-# Configure the Google Gemini SDK
-genai.configure(api_key=api_key)
-
-# Connect to our custom vector database
-db = SimpleVectorDB()
-
-# Check if the database has any documents
-if not db.data:
-    print("[ERROR] Vector database is empty. Please run 'python ingest.py' first to index your documents.")
-    sys.exit(1)
-
-def embed_query(query_text):
+def format_context(results):
     """
-    Generates semantic vector embeddings for the query using Gemini's embedding model.
-    Note we use 'retrieval_query' task type here for optimal query embeddings.
+    Formats retrieved search results into a clean, numbered context block with citations.
     """
-    try:
-        response = genai.embed_content(
-            model="models/gemini-embedding-001",
-            content=query_text,
-            task_type="retrieval_query"
-        )
-        return response['embedding']
-    except Exception as e:
-        print(f"[ERROR] Failed to embed query: {e}")
-        return None
+    context_blocks = []
+    for rank, (score, doc) in enumerate(results, 1):
+        meta = doc.get("metadata", {})
+        source = os.path.basename(meta.get("source", "unknown"))
+        page = f" (Page {meta['page']})" if "page" in meta else ""
+        chunk_id = meta.get("chunk_index", doc.get("id"))
 
-def ask_question(question):
+        header = f"[Source #{rank} | File: {source}{page} | Chunk ID: {chunk_id} | Similarity: {score:.4f}]"
+        context_blocks.append(f"{header}\n{doc['text']}")
+    return "\n\n".join(context_blocks)
+
+def ask_question(question: str, client: GeminiClient, db: PineconeVectorDB, top_k: int = 3):
     """
-    Searches the vector database for relevant contexts, prompts the LLM, and prints the result.
+    RAG Query Flow:
+    1. Embed query vector with RETRIEVAL_QUERY task type.
+    2. Query official Pinecone Cloud index for top-k matching segments (Cosine similarity).
+    3. Construct grounded prompt with citations.
+    4. Call Gemini 2.5 Flash for hallucination-free generation.
     """
-    print("\n--- Step 1: Embedding Query ---")
-    query_vector = embed_query(question)
-    if not query_vector:
-        return
-        
-    print("--- Step 2: Retrieving Context from Custom Vector DB ---")
-    # Query our custom database for the top 2 matching chunks
-    results = db.query(query_vector, n_results=2)
-    
+    print("\n🌲 Searching Pinecone vector index...")
+    t0 = time.time()
+    query_vector = client.embed_text(
+        text=question,
+        task_type="RETRIEVAL_QUERY",
+        output_dim=db.dimension
+    )
+    results = db.search(query_vector, top_k=top_k)
+    search_time = (time.time() - t0) * 1000
+
     if not results:
-        print("[WARN] No matching contexts found. Answering with general knowledge.")
-        context = "No context available."
-    else:
-        print(f"Retrieved {len(results)} relevant segments:")
-        retrieved_texts = []
-        for similarity, item in results:
-            snippet = item["text"][:120].replace('\n', ' ') + "..."
-            source = item["metadata"].get("source", "unknown")
-            print(f"  - [Similarity: {similarity:.4f} | Source: {source}]: {snippet}")
-            retrieved_texts.append(item["text"])
-        context = "\n---\n".join(retrieved_texts)
+        print("⚠️  No relevant documents found in Pinecone index.")
+        return
 
-    print("\n--- Step 3: Generating Answer with Gemini LLM ---")
-    # Build a prompt that forces the model to use the context
-    prompt = f"""You are a precise Q&A assistant. Use ONLY the facts provided in the Context section below to answer the Question.
-If the answer cannot be found in the provided context, state that you do not have enough information to answer. Do not use external facts.
+    print(f"⚡ Retrieved {len(results)} chunks in {search_time:.1f}ms:\n")
+    for rank, (score, doc) in enumerate(results, 1):
+        meta = doc.get("metadata", {})
+        src = os.path.basename(meta.get("source", "unknown"))
+        page = f", Page {meta['page']}" if "page" in meta else ""
+        snippet = doc['text'][:120].replace('\n', ' ') + "..."
+        print(f"  [{rank}] Score: {score:.4f} | Source: {src}{page}")
+        print(f"      \"{snippet}\"")
 
-Context:
-{context}
+    context_str = format_context(results)
 
-Question:
+    prompt = f"""You are a precise, reliable enterprise Q&A assistant.
+Answer the user's question using ONLY the factual context provided below.
+If the context does not contain enough information to answer the question accurately, explicitly state:
+"I do not have enough information in the provided documentation to answer that question."
+Do not make up facts or extrapolate beyond what is documented.
+
+=== CONTEXT ===
+{context_str}
+
+=== QUESTION ===
 {question}
 
-Answer:"""
+=== ANSWER (Include citations to source numbers e.g. [Source #1] where applicable) ==="""
+
+    print("\n🤖 Generating answer with Gemini 2.5 Flash...")
+    t1 = time.time()
+    answer = client.generate_answer(prompt, model="gemini-2.5-flash", temperature=0.1)
+    gen_time = time.time() - t1
+
+    print("\n" + "=" * 60)
+    print("📢 ANSWER:")
+    print("=" * 60)
+    print(answer.strip())
+    print("=" * 60)
+    print(f"⏱️  Retrieval: {search_time:.1f}ms | Generation: {gen_time:.2f}s")
+
+def main():
+    try:
+        client = GeminiClient()
+    except ValueError as e:
+        print(f"[CONFIGURATION ERROR] {e}")
+        sys.exit(1)
 
     try:
-        # Using the fast, efficient gemini-2.5-flash model
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        response = model.generate_content(prompt)
-        
-        print("\n--- Answer ---")
-        print(response.text)
-        print("-" * 30)
-    except Exception as e:
-        print(f"[ERROR] Failed to generate answer from LLM: {e}")
+        db = PineconeVectorDB(index_name="rag-bot", dimension=768)
+    except ValueError as e:
+        print(f"[PINECONE ERROR] {e}")
+        sys.exit(1)
 
-if __name__ == "__main__":
-    print("=" * 60)
-    print("       RAG Search & Q&A Terminal CLI (Gemini + Custom Vector DB)")
-    print("       Type 'exit' or 'quit' to close the program.")
-    print("=" * 60)
-    
+    if db.total_vectors == 0:
+        print("\n[WARNING] Pinecone index currently has 0 vectors.")
+        print("Please run ingestion first:")
+        print("    python ingest.py docs/java_course.pdf")
+        sys.exit(1)
+
+    print("=" * 65)
+    print("   🌲 PINECONE + GEMINI RAG CHAT CLI (Official Cloud Vector DB)")
+    print(f"   Cloud Index: {db.index_name} | Total Vectors: {db.total_vectors}")
+    print("   Commands: 'exit' or 'quit' to exit | 'stats' for index info")
+    print("=" * 65)
+
     while True:
         try:
-            user_input = input("\nAsk a question: ").strip()
+            user_input = input("\n💬 Ask a question: ").strip()
             if not user_input:
                 continue
-            if user_input.lower() in ["exit", "quit"]:
-                print("Goodbye!")
+
+            if user_input.lower() in ["exit", "quit", "q"]:
+                print("👋 Goodbye!")
                 break
-                
-            ask_question(user_input)
+
+            if user_input.lower() == "stats":
+                print(f"\n📊 Pinecone Cloud Stats:")
+                print(f"   Index Name:   {db.index_name}")
+                print(f"   Total Chunks: {db.total_vectors}")
+                print(f"   Dimension:    {db.dimension}")
+                print(f"   Metric:       Cosine Similarity")
+                continue
+
+            ask_question(user_input, client, db, top_k=3)
+
         except KeyboardInterrupt:
-            print("\nGoodbye!")
+            print("\n👋 Session closed.")
             break
+        except Exception as e:
+            print(f"\n[ERROR] {e}")
+
+if __name__ == "__main__":
+    main()
