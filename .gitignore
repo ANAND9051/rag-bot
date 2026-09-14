@@ -27,3 +27,8 @@ Thumbs.db
 # User Uploads & Extracted OCR Caches
 uploads/
 *.extracted.md
+
+# Personal Reading & Learning Guide PDFs (Local Only)
+*Guide*.pdf
+*guide*.pdf
+
