@@ -163,7 +163,16 @@ def ingest_files_ui(uploaded_files, clear_existing: bool, chunk_size: int = 700,
         status_text.text(f"Extracting & chunking ({idx}/{total_files}): {filename}")
         progress_bar.progress(int((idx / (total_files + 1)) * 40), text=f"Processing {filename}...")
 
-        segments = extract_text_from_file(path, client=client)
+        try:
+            segments = extract_text_from_file(
+                path,
+                client=client,
+                progress_callback=lambda msg: status_text.text(f"({filename}) {msg}")
+            )
+        except Exception as e:
+            st.error(f"⚠️ Failed to extract text from '{filename}': {e}")
+            continue
+
         for seg_text, seg_meta in segments:
             chunks = splitter.split_text(seg_text)
             for chunk in chunks:
@@ -259,7 +268,12 @@ with st.sidebar:
     st.subheader("⚙️ Query Configuration")
     top_k = st.slider("Top-K Chunks to Retrieve", min_value=1, max_value=8, value=3)
     temperature = st.slider("Generation Temperature", min_value=0.0, max_value=1.0, value=0.1, step=0.05)
-    model_choice = st.selectbox("Gemini Model", ["gemini-2.5-flash", "gemini-2.5-pro"], index=0)
+    model_choice = st.selectbox(
+        "Gemini Model",
+        ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-flash-latest", "gemini-2.5-flash"],
+        index=0,
+        help="gemini-3.5-flash is the high-capacity production model with generous free quotas."
+    )
     enable_chat_memory = st.checkbox("Enable Conversational Memory", value=True, help="Rephrases follow-up questions using past turns to maintain context.")
 
     st.divider()
@@ -385,7 +399,12 @@ Do not make up facts, extrapolate, or hallucinate beyond what is documented.
                 )
 
                 response_placeholder = st.empty()
-                full_response = response_placeholder.write_stream(stream_generator)
+                try:
+                    full_response = response_placeholder.write_stream(stream_generator)
+                except Exception:
+                    with st.spinner("Completing answer generation..."):
+                        full_response = client.generate_answer(prompt, model=model_choice, temperature=temperature)
+                        response_placeholder.markdown(full_response)
                 gen_time_s = time.time() - t1
 
                 # 4. Show Source Expander

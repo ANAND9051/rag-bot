@@ -23,3 +23,7 @@ ENV/
 # OS metadata files
 .DS_Store
 Thumbs.db
+
+# User Uploads & Extracted OCR Caches
+uploads/
+*.extracted.md

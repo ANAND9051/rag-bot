@@ -70,9 +70,9 @@ Do not make up facts or extrapolate beyond what is documented.
 
 === ANSWER (Include citations to source numbers e.g. [Source #1] where applicable) ==="""
 
-    print("\n🤖 Generating answer with Gemini 2.5 Flash...")
+    print("\n🤖 Generating answer with Gemini 3.5 Flash...")
     t1 = time.time()
-    answer = client.generate_answer(prompt, model="gemini-2.5-flash", temperature=0.1)
+    answer = client.generate_answer(prompt, model="gemini-3.5-flash", temperature=0.1)
     gen_time = time.time() - t1
 
     print("\n" + "=" * 60)

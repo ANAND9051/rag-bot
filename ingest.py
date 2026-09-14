@@ -13,11 +13,11 @@ from vector_db import PineconeVectorDB
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-def extract_text_from_file(file_path: str, client: GeminiClient = None):
+def extract_text_from_file(file_path: str, client: GeminiClient = None, progress_callback=None):
     """
     Reads document file and returns a list of (text_segment, metadata) tuples.
     For standard PDFs, extracts digital text layers.
-    For scanned/image-based PDFs, automatically triggers Gemini 2.5 Flash Multimodal
+    For scanned/image-based PDFs, automatically triggers Gemini Multimodal
     vision transcription and caches the extracted text locally.
     """
     if not os.path.exists(file_path):
@@ -40,6 +40,8 @@ def extract_text_from_file(file_path: str, client: GeminiClient = None):
         # If already extracted and cached, load from disk immediately
         if os.path.exists(cached_text_path):
             print(f"⚡ Found previously extracted text cache: {cached_text_path}. Loading...")
+            if progress_callback:
+                progress_callback(f"Loading cached OCR text for {os.path.basename(file_path)}...")
             with open(cached_text_path, "r", encoding="utf-8", errors="ignore") as f:
                 content = f.read()
             segments.append((content, {"source": file_path, "type": "pdf_extracted"}))
@@ -63,17 +65,20 @@ def extract_text_from_file(file_path: str, client: GeminiClient = None):
             # If the PDF has almost no selectable text (scanned image slides), use Multimodal OCR
             if total_chars < 50 * max(1, total_pages):
                 print("\n⚠️  Scanned/Image-based PDF detected (no digital text layer found).")
-                print("🤖 Using Gemini 2.5 Flash Multimodal Vision to transcribe pages...")
+                print("🤖 Using Gemini Multimodal Vision to transcribe pages...")
                 if client is None:
                     client = GeminiClient()
 
                 segments = []
                 all_extracted_text = []
-                batch_size = 16
+                batch_size = 10
 
                 for start_idx in range(0, total_pages, batch_size):
                     end_idx = min(start_idx + batch_size, total_pages)
-                    print(f"   Transcribing pages {start_idx + 1} to {end_idx} of {total_pages}...")
+                    status_msg = f"Transcribing pages {start_idx + 1} to {end_idx} of {total_pages} with Gemini Vision..."
+                    print(f"   {status_msg}")
+                    if progress_callback:
+                        progress_callback(status_msg)
 
                     writer = pypdf.PdfWriter()
                     for p in reader.pages[start_idx:end_idx]:
@@ -96,6 +101,8 @@ def extract_text_from_file(file_path: str, client: GeminiClient = None):
                         batch_text,
                         {"source": file_path, "page_range": f"{start_idx + 1}-{end_idx}", "type": "pdf_multimodal"}
                     ))
+                    # Polite pause between batches to protect free-tier rate limits
+                    time.sleep(2)
 
                 # Save cache so it doesn't need to be OCR'd again
                 full_transcription = "\n\n".join(all_extracted_text)
