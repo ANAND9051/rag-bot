@@ -12,6 +12,14 @@ if hasattr(sys.stdout, "reconfigure"):
 # Load environment variables
 load_dotenv()
 
+# Automatically sync Streamlit Cloud secrets to environment variables if present
+try:
+    for key in ["GEMINI_API_KEY", "PINECONE_API_KEY"]:
+        if key in st.secrets and not os.getenv(key):
+            os.environ[key] = str(st.secrets[key])
+except Exception:
+    pass
+
 from gemini_client import GeminiClient
 from vector_db import PineconeVectorDB
 from chunking import RecursiveTextSplitter
