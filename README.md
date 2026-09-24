@@ -3,19 +3,19 @@
 # 🌲 Document Q&A Bot
 ### Production RAG with Pinecone Cloud & Google Gemini
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://rag-bot-anand9051.streamlit.app)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://rag-bot-kqpmz4esjiwvtzmiri92s6.streamlit.app)
 [![Pinecone](https://img.shields.io/badge/Vector%20DB-Pinecone%20Serverless-00b4d8?style=flat&logo=pinecone)](https://www.pinecone.io)
 [![Google Gemini](https://img.shields.io/badge/LLM-Google%20Gemini%202.5%20Flash-4285F4?style=flat&logo=google)](https://ai.google.dev)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat&logo=python)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-**[🚀 Launch Live Web App](https://rag-bot-anand9051.streamlit.app)** • **[📸 Demo Screenshots](#-demo-screenshots)** • **[🏗️ Architecture](#️-architecture-overview)** • **[⚡ Features](#-production-features)** • **[🚀 Setup](#-setup-instructions)**
+**[🚀 Launch Live Web App](https://rag-bot-kqpmz4esjiwvtzmiri92s6.streamlit.app)** • **[📸 Demo Screenshots](#-demo-screenshots)** • **[🏗️ Architecture](#️-architecture-overview)** • **[⚡ Features](#-production-features)** • **[🚀 Setup](#-setup-instructions)**
 
 </div>
 
 ---
 
-> 🚀 **Live Interactive Demo:** [rag-bot-anand9051.streamlit.app](https://rag-bot-anand9051.streamlit.app)  
+> 🚀 **Live Interactive Demo:** [rag-bot-kqpmz4esjiwvtzmiri92s6.streamlit.app](https://rag-bot-kqpmz4esjiwvtzmiri92s6.streamlit.app)  
 > *Upload your documents, inspect real-time vector indexes in Pinecone, and test questions with grounded Gemini Flash generation.*
 
 ---
